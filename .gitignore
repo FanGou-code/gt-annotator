@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+data/
+.DS_Store
+Thumbs.db
+.qoder/
+.idea/
+.vscode/
+.venv/
+venv/
+nohup.out

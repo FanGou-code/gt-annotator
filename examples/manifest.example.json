@@ -1,0 +1,10 @@
+{
+  "name": "demo",
+  "images_root": "images",
+  "items": [
+    {"id": "demo_01_001", "image": "demo_01.png", "query": "the red square in the upper left"},
+    {"id": "demo_01_002", "image": "demo_01.png", "query": "the blue circle in the lower right"},
+    {"id": "demo_02_001", "image": "demo_02.png", "query": "the left one of the two yellow triangles"},
+    {"id": "demo_03_001", "image": "demo_03.png", "query": "the black rectangle in the center"}
+  ]
+}

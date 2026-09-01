@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>gt-annotator — 人工定位打标器</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app" class="app-layout">
+    
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <span class="logo">gt-annotator</span>
+        <span id="manifest-badge" class="badge badge-subtle">加载中...</span>
+        <div class="header-stat">
+          <span id="item-index-display">Item #0 / 0</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="progress-container">
+          <div class="progress-info">
+            <span id="progress-text">已标: 0 / 0 (0.0%)</span>
+            <span id="image-progress-text" class="progress-sub">图片: 0 / 0</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <!-- Quick Jump Input -->
+        <div class="jump-box" title="输入图片文件名(如 000002)或条目编号前缀回车跳转">
+          <input type="text" id="jump-input" placeholder="输入图号/编号跳转..." autocomplete="off" />
+          <button id="jump-btn" class="btn btn-secondary btn-sm">跳转</button>
+        </div>
+
+        <!-- Annotator Name -->
+        <div class="annotator-box">
+          <label for="annotator-input">标注者:</label>
+          <input type="text" id="annotator-input" placeholder="匿名" maxlength="64" autocomplete="off" />
+        </div>
+
+        <!-- Token Settings -->
+        <button id="token-btn" class="btn btn-icon btn-sm" title="鉴权 Token 设置">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+        </button>
+
+        <!-- Help / Shortcuts -->
+        <button id="help-btn" class="btn btn-icon btn-sm" title="快捷键与帮助 (?)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Query Info & Navigation Bar -->
+    <section class="query-panel">
+      <div class="query-meta">
+        <span id="current-id-badge" class="badge badge-id">ID: -</span>
+        <span id="annotation-status-badge" class="badge badge-unannotated">未标注</span>
+      </div>
+
+      <div class="query-content">
+        <div class="query-en-wrap">
+          <span class="query-label">EN</span>
+          <span id="query-en-text" class="query-en">加载中...</span>
+        </div>
+        <div id="query-zh-wrap" class="query-zh-wrap">
+          <span class="query-label">ZH</span>
+          <span id="query-zh-text" class="query-zh"></span>
+        </div>
+      </div>
+
+      <div class="nav-actions">
+        <div class="btn-group">
+          <button id="prev-btn" class="btn btn-secondary" title="上一条 (←)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+            上一条
+          </button>
+          <button id="next-btn" class="btn btn-secondary" title="下一条 (→)">
+            下一条
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+
+        <div class="btn-group">
+          <button id="prev-unannotated-btn" class="btn btn-subtle" title="上一未标 (Shift + ←)">
+            上一未标
+          </button>
+          <button id="next-unannotated-btn" class="btn btn-subtle" title="下一未标 (Shift + →)">
+            下一未标
+          </button>
+        </div>
+
+        <button id="clear-btn" class="btn btn-danger" title="清除当前框 (Esc)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          清除框
+        </button>
+
+        <button id="save-btn" class="btn btn-primary" title="保存并跳转下一未标 (Enter / 空格)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          提交 (下一未标)
+        </button>
+      </div>
+    </section>
+
+    <!-- Main Workspace (Canvas Area) -->
+    <main class="canvas-workspace" id="canvas-container">
+      <canvas id="annotation-canvas"></canvas>
+
+      <!-- Canvas Floating HUD / View Controls -->
+      <div class="canvas-hud canvas-hud-top-right">
+        <div class="hud-item" id="hud-coords">坐标: -</div>
+        <div class="hud-item" id="hud-img-size">尺寸: -</div>
+      </div>
+
+      <div class="canvas-hud canvas-hud-bottom-right">
+        <div class="zoom-controls">
+          <button id="zoom-out-btn" class="btn btn-icon btn-hud" title="缩小 (-)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <span id="zoom-level-text" class="zoom-level">100%</span>
+          <button id="zoom-in-btn" class="btn btn-icon btn-hud" title="放大 (+)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button id="zoom-fit-btn" class="btn btn-hud" title="自适应居中 (0 或 R)">适应</button>
+          <button id="zoom-100-btn" class="btn btn-hud" title="100% 原始像素 (1)">1:1</button>
+        </div>
+      </div>
+
+      <!-- Loading / Error Overlay inside canvas -->
+      <div id="canvas-loading" class="canvas-overlay hidden">
+        <div class="spinner"></div>
+        <span id="canvas-loading-text">加载图片中...</span>
+      </div>
+
+      <div id="canvas-error" class="canvas-overlay hidden">
+        <div class="error-icon">⚠️</div>
+        <span id="canvas-error-text">图片加载失败</span>
+        <button id="retry-image-btn" class="btn btn-secondary btn-sm">重试</button>
+      </div>
+    </main>
+
+    <!-- Bottom Status Bar -->
+    <footer class="app-footer">
+      <div class="footer-left">
+        <span id="footer-item-info">Item: -</span>
+        <span class="footer-sep">|</span>
+        <span id="footer-annotator-info">Annotator: -</span>
+        <span class="footer-sep">|</span>
+        <span id="footer-bbox-info">BBox: 未绘制</span>
+      </div>
+      <div class="footer-right">
+        <span class="shortcut-tip"><kbd>Enter</kbd>/<kbd>Space</kbd> 提交</span>
+        <span class="shortcut-tip"><kbd>Esc</kbd> 清除</span>
+        <span class="shortcut-tip"><kbd>←</kbd>/<kbd>→</kbd> 切换</span>
+        <span class="shortcut-tip"><kbd>Shift+←</kbd>/<kbd>Shift+→</kbd> 未标</span>
+        <span class="shortcut-tip"><kbd>滚轮</kbd> 缩放</span>
+        <span class="shortcut-tip"><kbd>拖拽空白/中键/右键</kbd> 平移</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Token Modal -->
+  <div id="token-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>访问 Token 设置</h3>
+        <button class="modal-close" id="token-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>若服务端启动时开启了 <code>--token</code> 参数，所有 API 请求需携带此 Token 鉴权。</p>
+        <div class="form-group">
+          <label for="token-modal-input">X-Auth-Token:</label>
+          <input type="text" id="token-modal-input" placeholder="输入 Token（若未设可留空）" autocomplete="off" />
+        </div>
+        <div id="token-modal-alert" class="alert alert-error hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="token-modal-cancel" class="btn btn-secondary">取消</button>
+        <button id="token-modal-save" class="btn btn-primary">保存并连接</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help / Shortcuts Modal -->
+  <div id="help-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h3>操作指南与快捷键说明</h3>
+        <button class="modal-close" id="help-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <table class="shortcuts-table">
+          <thead>
+            <tr><th>按键 / 交互</th><th>操作说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><kbd>鼠标左键拖拽</kbd></td><td>在画布绘制新框 / 拖拽移动现有框 / 按住 8 个控制点缩放</td></tr>
+            <tr><td><kbd>滚轮</kbd></td><td>以鼠标所在位置为中心无损平滑缩放</td></tr>
+            <tr><td><kbd>拖拽空白 / 鼠标中键 / 鼠标右键</kbd></td><td>平移画布视口</td></tr>
+            <tr><td><kbd>Enter</kbd> 或 <kbd>Space</kbd></td><td>提交当前标注，并自动跳至<strong>下一条未标注</strong></td></tr>
+            <tr><td><kbd>Esc</kbd> 或 <kbd>Delete</kbd></td><td>清除当前标注框（若已保存会向后端发送 DELETE）</td></tr>
+            <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>切换到上一条 / 下一条</td></tr>
+            <tr><td><kbd>Shift + ←</kbd> / <kbd>Shift + →</kbd></td><td>快速跳至上一条 / 下一条未标注条目</td></tr>
+            <tr><td><kbd>0</kbd> 或 <kbd>R</kbd></td><td>重置视口（自适应居中）</td></tr>
+            <tr><td><kbd>1</kbd></td><td>1:1 原始分辨率显示</td></tr>
+            <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>放大 / 缩小画布</td></tr>
+          </tbody>
+        </table>
+        <div class="help-section">
+          <h4>图号快速跳转规则</h4>
+          <p>在顶部「输入图号/编号」输入框中输入图片文件名（如 <code>000002</code>、<code>000002_visible</code>）或 Item ID 前缀（如 <code>000002_001</code>），回车即可直接定位到该图的第一条 Query。</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="help-modal-ok" class="btn btn-primary">我知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
