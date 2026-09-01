@@ -100,6 +100,8 @@
     progressText: document.getElementById('progress-text'),
     imageProgressText: document.getElementById('image-progress-text'),
     progressBarFill: document.getElementById('progress-bar-fill'),
+    seekSlider: document.getElementById('seek-slider'),
+    seekPreview: document.getElementById('seek-preview'),
     jumpInput: document.getElementById('jump-input'),
     jumpBtn: document.getElementById('jump-btn'),
     annotatorInput: document.getElementById('annotator-input'),
@@ -322,10 +324,23 @@
   function jumpToImage(query) {
     if (!query || !query.trim()) return;
     const q = query.trim().toLowerCase();
-    
+
+    // 0. "#N" → jump to ordinal item N (1-based)
+    if (q.startsWith('#')) {
+      const n = parseInt(q.slice(1), 10);
+      if (Number.isInteger(n) && n >= 1 && n <= state.items.length) {
+        goToIndex(n - 1);
+        showToast(`已跳转到第 ${n} 条 (${state.items[n - 1].id})`, 'info');
+        dom.jumpInput.value = '';
+      } else {
+        showToast(`序数超出范围: 1 ~ ${state.items.length}`, 'error');
+      }
+      return;
+    }
+
     // 1. Match item ID exact or prefix
     let targetIdx = state.items.findIndex(it => it.id.toLowerCase() === q || it.id.toLowerCase().startsWith(q));
-    
+
     // 2. Match image filename
     if (targetIdx === -1) {
       targetIdx = state.items.findIndex(it => {
@@ -338,6 +353,19 @@
           return it.image_url.toLowerCase().includes(q);
         }
       });
+    }
+
+    // 3. Pure digits that matched nothing → treat as ordinal
+    if (targetIdx === -1 && /^\d+$/.test(q)) {
+      const n = parseInt(q, 10);
+      if (n >= 1 && n <= state.items.length) {
+        goToIndex(n - 1);
+        showToast(`未匹配到 id/图号，已按序数跳到第 ${n} 条 (${state.items[n - 1].id})`, 'info');
+        dom.jumpInput.value = '';
+      } else {
+        showToast(`未找到匹配，且序数超出范围: 1 ~ ${state.items.length}`, 'error');
+      }
+      return;
     }
 
     if (targetIdx !== -1) {
@@ -360,6 +388,12 @@
     // Header & Meta Info
     dom.itemIndexDisplay.textContent = `Item #${state.currentIndex + 1} / ${state.items.length}`;
     dom.currentIdBadge.textContent = `ID: ${item.id}`;
+
+    // Seek slider position sync
+    if (dom.seekSlider) {
+      dom.seekSlider.max = String(state.items.length);
+      dom.seekSlider.value = String(state.currentIndex + 1);
+    }
     
     if (item.bbox) {
       dom.annotationStatusBadge.textContent = item.annotator ? `已标注 (${item.annotator})` : '已标注';
@@ -1160,6 +1194,20 @@
 
     // Jump Input
     dom.jumpBtn.addEventListener('click', () => jumpToImage(dom.jumpInput.value));
+
+    // Seek Slider: floating preview while dragging (zero layout shift), jump on release
+    dom.seekSlider.addEventListener('input', () => {
+      const idx = parseInt(dom.seekSlider.value, 10) - 1;
+      const item = state.items[idx];
+      if (item) {
+        dom.seekPreview.textContent = `第 ${idx + 1} / ${state.items.length} 条 · ${item.id}`;
+        dom.seekPreview.classList.remove('hidden');
+      }
+    });
+    dom.seekSlider.addEventListener('change', () => {
+      dom.seekPreview.classList.add('hidden');
+      goToIndex(parseInt(dom.seekSlider.value, 10) - 1);
+    });
 
     // Annotator Input
     dom.annotatorInput.value = state.annotator;

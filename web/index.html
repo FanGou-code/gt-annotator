@@ -28,6 +28,9 @@
           <div class="progress-bar-bg">
             <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
           </div>
+          <input type="range" id="seek-slider" class="seek-slider" min="1" max="1" value="1" step="1"
+                 title="拖动快速跳转：拖动预览条目序号，松开跳转" />
+          <div id="seek-preview" class="seek-preview hidden"></div>
         </div>
       </div>
 
@@ -216,6 +219,7 @@
         <div class="help-section">
           <h4>图号快速跳转规则</h4>
           <p>在顶部「输入图号/编号」输入框中输入图片文件名（如 <code>000002</code>、<code>000002_visible</code>）或 Item ID 前缀（如 <code>000002_001</code>），回车即可直接定位到该图的第一条 Query。</p>
+          <p>输入 <code>#500</code> 可直接跳到第 500 条（按序数）；纯数字若未匹配到 id/图号，也会自动按序数处理。上方的滑杆支持拖动快速翻页：拖动时预览序号，松开即跳转。</p>
         </div>
       </div>
       <div class="modal-footer">
