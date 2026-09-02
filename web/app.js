@@ -111,13 +111,9 @@
     queryEnText: document.getElementById('query-en-text'),
     queryZhWrap: document.getElementById('query-zh-wrap'),
     queryZhText: document.getElementById('query-zh-text'),
-    prevBtn: document.getElementById('prev-btn'),
-    nextBtn: document.getElementById('next-btn'),
-    prevUnannotatedBtn: document.getElementById('prev-unannotated-btn'),
-    nextUnannotatedBtn: document.getElementById('next-unannotated-btn'),
-    prevAiBtn: document.getElementById('prev-ai-btn'),
-    nextAiBtn: document.getElementById('next-ai-btn'),
+    nextTodoBtn: document.getElementById('next-todo-btn'),
     clearBtn: document.getElementById('clear-btn'),
+    absentBtn: document.getElementById('absent-btn'),
     saveBtn: document.getElementById('save-btn'),
 
     // Canvas
@@ -150,6 +146,26 @@
   };
 
   const ctx = dom.canvas.getContext('2d');
+
+  // --- Annotation Status Predicates ---
+  function isAiAnnotator(annotator) {
+    return !!annotator && (annotator.startsWith('glm') || annotator.includes('ai'));
+  }
+
+  // Absence verdict record: no box, annotator "<name>:absent"
+  function isAbsentItem(item) {
+    return !item.bbox && !!item.annotator && item.annotator.endsWith(':absent');
+  }
+
+  // AI pre-annotation awaiting human review: a glm-drawn box or a glm absence verdict
+  function isAiPendingItem(item) {
+    const ann = item.annotator || '';
+    if (!ann) return false;
+    if (ann.endsWith(':absent')) {
+      return isAiAnnotator(ann.slice(0, -':absent'.length));
+    }
+    return !!item.bbox && isAiAnnotator(ann);
+  }
 
   // --- API Client ---
   async function apiFetch(url, options = {}) {
@@ -197,9 +213,9 @@
       
       dom.manifestBadge.textContent = state.manifest;
       
-      // Auto-position to first unannotated item
-      const firstUnannotatedIdx = state.items.findIndex(it => it.bbox === null);
-      state.currentIndex = firstUnannotatedIdx >= 0 ? firstUnannotatedIdx : 0;
+      // Auto-position to first unprocessed item
+      const firstUnprocessedIdx = state.items.findIndex(it => !it.bbox && !it.annotator);
+      state.currentIndex = firstUnprocessedIdx >= 0 ? firstUnprocessedIdx : 0;
       
       updateOverallProgress();
       renderCurrentItem();
@@ -215,19 +231,23 @@
   function updateOverallProgress() {
     const total = state.items.length;
     let annotatedCount = 0;
+    let absentCount = 0;
     const imageSet = new Set();
     const annotatedImageSet = new Set();
 
     state.items.forEach(it => {
       imageSet.add(it.image_url);
-      if (it.bbox !== null) {
+      if (it.bbox) {
         annotatedCount++;
         annotatedImageSet.add(it.image_url);
+      } else if (it.annotator) {
+        absentCount++;
       }
     });
 
-    const pct = total > 0 ? ((annotatedCount / total) * 100).toFixed(1) : '0.0';
-    dom.progressText.textContent = `已标: ${annotatedCount} / ${total} (${pct}%)`;
+    const processed = annotatedCount + absentCount;
+    const pct = total > 0 ? ((processed / total) * 100).toFixed(1) : '0.0';
+    dom.progressText.textContent = `已标: ${annotatedCount} · 判空: ${absentCount} / ${total} (${pct}%)`;
     dom.imageProgressText.textContent = `图片: ${annotatedImageSet.size} / ${imageSet.size}`;
     dom.progressBarFill.style.width = `${pct}%`;
   }
@@ -262,22 +282,22 @@
 
   function findNextUnannotated(fromIndex = state.currentIndex) {
     for (let i = fromIndex + 1; i < state.items.length; i++) {
-      if (state.items[i].bbox === null) return i;
+      if (!state.items[i].bbox && !state.items[i].annotator) return i;
     }
     // wrap around
     for (let i = 0; i <= fromIndex; i++) {
-      if (state.items[i].bbox === null) return i;
+      if (!state.items[i].bbox && !state.items[i].annotator) return i;
     }
     return -1;
   }
 
   function findPrevUnannotated(fromIndex = state.currentIndex) {
     for (let i = fromIndex - 1; i >= 0; i--) {
-      if (state.items[i].bbox === null) return i;
+      if (!state.items[i].bbox && !state.items[i].annotator) return i;
     }
     // wrap around
     for (let i = state.items.length - 1; i >= fromIndex; i--) {
-      if (state.items[i].bbox === null) return i;
+      if (!state.items[i].bbox && !state.items[i].annotator) return i;
     }
     return -1;
   }
@@ -286,7 +306,7 @@
     const nextIdx = findNextUnannotated();
     if (nextIdx !== -1 && nextIdx !== state.currentIndex) {
       goToIndex(nextIdx);
-    } else if (state.items.every(it => it.bbox !== null)) {
+    } else if (state.items.every(it => it.bbox || it.annotator)) {
       showToast('🎉 所有条目已标注完毕！', 'success');
     } else {
       showToast('已是最后一条未标注', 'info');
@@ -378,17 +398,22 @@
     }
     
     if (item.bbox) {
-      const isAi = item.annotator && (item.annotator.startsWith('glm') || item.annotator.includes('ai'));
-      if (isAi) {
+      if (isAiPendingItem(item)) {
         dom.annotationStatusBadge.textContent = `🤖 待审AI预标 (${item.annotator})`;
         dom.annotationStatusBadge.className = 'badge badge-ai';
       } else {
         dom.annotationStatusBadge.textContent = item.annotator ? `已核验 (${item.annotator})` : '已标注';
         dom.annotationStatusBadge.className = 'badge badge-annotated';
       }
-    } else if (item.annotator && item.annotator.includes('absent')) {
-      dom.annotationStatusBadge.textContent = `⚠️ 目标不存在 (AI判空)`;
-      dom.annotationStatusBadge.className = 'badge badge-absent';
+    } else if (isAbsentItem(item)) {
+      if (isAiPendingItem(item)) {
+        dom.annotationStatusBadge.textContent = `⚠️ 目标不存在 (AI判空待审)`;
+        dom.annotationStatusBadge.className = 'badge badge-absent';
+      } else {
+        const name = item.annotator.replace(/:absent$/, '');
+        dom.annotationStatusBadge.textContent = `✓ 已确认判空 (${name})`;
+        dom.annotationStatusBadge.className = 'badge badge-annotated';
+      }
     } else {
       dom.annotationStatusBadge.textContent = '未标注';
       dom.annotationStatusBadge.className = 'badge badge-unannotated';
@@ -411,10 +436,6 @@
     dom.footerItemInfo.textContent = `Item: ${item.id} (${state.currentIndex + 1}/${state.items.length})`;
     dom.footerAnnotatorInfo.textContent = `Annotator: ${item.annotator || '-'}`;
     updateFooterBboxInfo();
-
-    // Nav Button states
-    dom.prevBtn.disabled = state.currentIndex === 0;
-    dom.nextBtn.disabled = state.currentIndex === state.items.length - 1;
 
     // Load Image
     loadImage(item.image_url);
@@ -461,9 +482,6 @@
     };
 
     img.onerror = () => {
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
       if (getCurrentItem()?.image_url === url) {
         state.isImageLoading = false;
         dom.canvasLoading.classList.add('hidden');
@@ -497,7 +515,7 @@
     // Always reset transform matrix directly to dpr to guarantee 1:1 crispness without accumulation
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    if (fitImage && state.currentImage && state.interaction.mode === 'none') {
+    if (fitImage && state.currentImage && state.interaction.mode === 'idle') {
       fitImageToCanvas();
     }
     redraw();
@@ -687,7 +705,7 @@
     const h = Math.abs(p2.y - p1.y);
 
     const curItem = getCurrentItem();
-    const isAi = curItem && curItem.annotator && (curItem.annotator.startsWith('glm') || curItem.annotator.includes('ai'));
+    const isAi = isAiPendingItem(curItem);
     const boxColor = isAi ? '#c084fc' : '#06b6d4';
     const boxFill = isAi ? 'rgba(168, 85, 247, 0.16)' : 'rgba(6, 182, 212, 0.16)';
     const handleBorder = isAi ? '#9333ea' : '#0891b2';
@@ -957,7 +975,6 @@
     redraw();
   }
 
-  // --- API Mutations (Save & Delete) ---
   async function saveBbox() {
     const item = getCurrentItem();
     if (!item) return;
@@ -1002,15 +1019,7 @@
       state.activeBbox = [...result.bbox];
 
       updateOverallProgress();
-      // Smart Auto-Jump: prioritize next unreviewed AI item if any exist ahead, otherwise next unannotated
-      const hasNextAi = state.items.slice(state.currentIndex + 1).some(
-        (it) => it.bbox && it.annotator && (it.annotator.startsWith('glm') || it.annotator.includes('ai'))
-      );
-      if (hasNextAi) {
-        goToNextAi();
-      } else {
-        goToNextUnannotated();
-      }
+      goToNextTodo();
     } catch (err) {
       showToast('保存失败: ' + err.message, 'error');
     } finally {
@@ -1018,17 +1027,72 @@
     }
   }
 
+  async function confirmAbsent() {
+    const item = getCurrentItem();
+    if (!item) return;
+
+    const annotatorName = (dom.annotatorInput.value || '').trim();
+    if (!annotatorName) {
+      showToast('判空需署名：请先在右上角填写标注者', 'error');
+      dom.annotatorInput.focus();
+      return;
+    }
+    state.annotator = annotatorName;
+    localStorage.setItem(STORAGE_KEY_ANNOTATOR, annotatorName);
+
+    try {
+      dom.saveBtn.disabled = true;
+      const resp = await apiFetch(`/api/item/${encodeURIComponent(item.id)}/absent`, {
+        method: 'PUT',
+        body: JSON.stringify({ annotator: annotatorName })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
+
+      const result = await resp.json();
+      item.bbox = null;
+      item.annotator = result.annotator;
+      state.activeBbox = null;
+      updateOverallProgress();
+      renderCurrentItem();
+      showToast('已确认判空 (无目标)', 'success');
+      goToNextTodo();
+    } catch (err) {
+      showToast('判空失败: ' + err.message, 'error');
+    } finally {
+      dom.saveBtn.disabled = false;
+    }
+  }
+
+  // X key: human absence verdict on the current item
+  function markAbsent() {
+    const item = getCurrentItem();
+    if (!item) return;
+    if (state.activeBbox) {
+      showToast('当前已有目标框；如确认无目标请先按 Esc 清除', 'error');
+      return;
+    }
+    if (isAbsentItem(item)) {
+      showToast('当前条目已是判空状态', 'info');
+      return;
+    }
+    confirmAbsent();
+  }
+
   async function clearBbox() {
     const item = getCurrentItem();
     if (!item) return;
 
-    if (!state.activeBbox && !item.bbox) {
+    if (!state.activeBbox && !item.bbox && !item.annotator) {
       showToast('当前无已绘制的目标框', 'info');
       return;
     }
 
-    // If item was already saved on server, call DELETE
-    if (item.bbox) {
+    // If item has server-side state (a saved box or an absence verdict), call DELETE
+    if (item.bbox || item.annotator) {
       try {
         dom.clearBtn.disabled = true;
         const resp = await apiFetch(`/api/item/${encodeURIComponent(item.id)}/bbox`, {
@@ -1060,11 +1124,10 @@
     }
   }
 
-  // --- AI Annotation Quick Navigation ---
+  // --- Pending-item Jump (button + post-save smart jump) ---
   function goToPrevAi() {
     for (let i = state.currentIndex - 1; i >= 0; i--) {
-      const it = state.items[i];
-      if (it && it.bbox && it.annotator && (it.annotator.startsWith('glm') || it.annotator.includes('ai'))) {
+      if (isAiPendingItem(state.items[i])) {
         goToIndex(i);
         return;
       }
@@ -1074,13 +1137,51 @@
 
   function goToNextAi() {
     for (let i = state.currentIndex + 1; i < state.items.length; i++) {
-      const it = state.items[i];
-      if (it && it.bbox && it.annotator && (it.annotator.startsWith('glm') || it.annotator.includes('ai'))) {
+      if (isAiPendingItem(state.items[i])) {
         goToIndex(i);
         return;
       }
     }
     showToast('后面没有待审核的 AI 预标条目', 'info');
+  }
+
+  function goToNextTodo() {
+    // Prefer pending AI pre-annotations ahead, otherwise the next unprocessed item,
+    // wrapping to AI items before the cursor as a last resort.
+    for (let i = state.currentIndex + 1; i < state.items.length; i++) {
+      if (isAiPendingItem(state.items[i])) {
+        goToIndex(i);
+        return;
+      }
+    }
+    const nextIdx = findNextUnannotated();
+    if (nextIdx !== -1 && nextIdx !== state.currentIndex) {
+      goToIndex(nextIdx);
+      return;
+    }
+    for (let i = 0; i <= state.currentIndex; i++) {
+      if (isAiPendingItem(state.items[i])) {
+        goToIndex(i);
+        return;
+      }
+    }
+    if (state.items.every(it => it.bbox || it.annotator)) {
+      showToast('🎉 所有条目已处理完毕！', 'success');
+    } else {
+      showToast('已是最后一条待处理', 'info');
+    }
+  }
+
+  // --- API Mutations (Save, Absent & Delete) ---
+
+  // Enter/Space dispatcher: confirm absence on AI-absent items, save boxes otherwise
+  async function submitCurrent() {
+    const item = getCurrentItem();
+    if (item && !state.activeBbox && isAbsentItem(item)) {
+      await confirmAbsent();
+      return;
+    }
+    await saveBbox();
   }
 
   // --- Help Dialog ---
@@ -1108,8 +1209,72 @@
     if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
       e.preventDefault();
       if (!e.repeat) {
-        saveBbox();
+        submitCurrent();
       }
+      return;
+    }
+
+    if (e.key === 'x' || e.key === 'X') {
+      e.preventDefault();
+      if (!e.repeat) {
+        markAbsent();
+      }
+      return;
+    }
+
+    // Vim-style navigation (60% keyboard friendly); arrow keys remain as aliases
+    if (e.key === 'h' || e.key === 'H') {
+      e.preventDefault();
+      prevItem();
+      return;
+    }
+
+    if (e.key === 'l' || e.key === 'L') {
+      e.preventDefault();
+      nextItem();
+      return;
+    }
+
+    if (e.key === 'j' || e.key === 'J') {
+      e.preventDefault();
+      goToNextAi();
+      return;
+    }
+
+    if (e.key === 'k' || e.key === 'K') {
+      e.preventDefault();
+      goToPrevAi();
+      return;
+    }
+
+    if (e.key === 'n') {
+      e.preventDefault();
+      goToNextUnannotated();
+      return;
+    }
+
+    if (e.key === 'N') {
+      e.preventDefault();
+      goToPrevUnannotated();
+      return;
+    }
+
+    if (e.key === 'g') {
+      e.preventDefault();
+      goToIndex(0);
+      return;
+    }
+
+    if (e.key === 'G') {
+      e.preventDefault();
+      goToIndex(state.items.length - 1);
+      return;
+    }
+
+    if (e.key === '/') {
+      e.preventDefault();
+      dom.jumpInput.focus();
+      dom.jumpInput.select();
       return;
     }
 
@@ -1200,14 +1365,10 @@
     dom.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
     // Navigation & Action Buttons
-    dom.prevBtn.addEventListener('click', prevItem);
-    dom.nextBtn.addEventListener('click', nextItem);
-    dom.prevUnannotatedBtn.addEventListener('click', goToPrevUnannotated);
-    dom.nextUnannotatedBtn.addEventListener('click', goToNextUnannotated);
-    dom.prevAiBtn.addEventListener('click', goToPrevAi);
-    dom.nextAiBtn.addEventListener('click', goToNextAi);
+    dom.nextTodoBtn.addEventListener('click', goToNextTodo);
     dom.clearBtn.addEventListener('click', clearBbox);
-    dom.saveBtn.addEventListener('click', saveBbox);
+    dom.absentBtn.addEventListener('click', markAbsent);
+    dom.saveBtn.addEventListener('click', submitCurrent);
 
     // Jump Input
     dom.jumpBtn.addEventListener('click', () => jumpToImage(dom.jumpInput.value));

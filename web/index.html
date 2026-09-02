@@ -73,43 +73,26 @@
       </div>
 
       <div class="nav-actions">
-        <div class="btn-group">
-          <button id="prev-btn" class="btn btn-secondary" title="上一条 (←)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-            上一条
-          </button>
-          <button id="next-btn" class="btn btn-secondary" title="下一条 (→)">
-            下一条
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-          </button>
-        </div>
-
-        <div class="btn-group">
-          <button id="prev-unannotated-btn" class="btn btn-subtle" title="上一未标 (Shift + ←)">
-            上一未标
-          </button>
-          <button id="next-unannotated-btn" class="btn btn-subtle" title="下一未标 (Shift + →)">
-            下一未标
-          </button>
-        </div>
-
-        <div class="btn-group">
-          <button id="prev-ai-btn" class="btn btn-ai" title="上一条AI预标 (Alt + ←)">
-            上一AI
-          </button>
-          <button id="next-ai-btn" class="btn btn-ai" title="下一条AI预标 (Alt + →)">
-            下一AI
-          </button>
-        </div>
-
-        <button id="clear-btn" class="btn btn-danger" title="清除当前框 (Esc)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          清除框
+        <button id="next-todo-btn" class="btn btn-ai" title="跳到下一条待处理：优先 AI 待审，其次未标注 (J)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          下一条待办
         </button>
 
-        <button id="save-btn" class="btn btn-primary" title="保存并跳转下一未标 (Enter / 空格)">
+        <span class="nav-divider"></span>
+
+        <button id="save-btn" class="btn btn-primary" title="核验当前条目并智能跳转 (Enter / 空格)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-          提交 (下一未标)
+          核验
+        </button>
+
+        <button id="absent-btn" class="btn btn-warning" title="确认无目标/判空 (X)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          判空
+        </button>
+
+        <button id="clear-btn" class="btn btn-danger" title="清除当前框 / 撤销判空 (Esc)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          清除
         </button>
       </div>
     </section>
@@ -163,10 +146,12 @@
       <div class="footer-right">
         <span class="shortcut-tip"><kbd>Enter</kbd>/<kbd>Space</kbd> 提交</span>
         <span class="shortcut-tip"><kbd>Esc</kbd> 清除</span>
-        <span class="shortcut-tip"><kbd>←</kbd>/<kbd>→</kbd> 切换</span>
-        <span class="shortcut-tip"><kbd>Shift+←</kbd>/<kbd>Shift+→</kbd> 未标</span>
-        <span class="shortcut-tip"><kbd>滚轮</kbd> 缩放</span>
-        <span class="shortcut-tip"><kbd>拖拽空白/中键/右键</kbd> 平移</span>
+        <span class="shortcut-tip"><kbd>X</kbd> 判空</span>
+        <span class="shortcut-tip"><kbd>H</kbd>/<kbd>L</kbd> 前后</span>
+        <span class="shortcut-tip"><kbd>J</kbd>/<kbd>K</kbd> 待审AI</span>
+        <span class="shortcut-tip"><kbd>N</kbd> 未标</span>
+        <span class="shortcut-tip"><kbd>/</kbd> 跳转</span>
+        <span class="shortcut-tip"><kbd>滚轮</kbd> 缩放 · <kbd>拖拽</kbd> 平移</span>
       </div>
     </footer>
   </div>
@@ -188,11 +173,14 @@
             <tr><td><kbd>鼠标左键拖拽</kbd></td><td>在画布绘制新框 / 拖拽移动现有框 / 按住 8 个控制点缩放</td></tr>
             <tr><td><kbd>滚轮</kbd></td><td>以鼠标所在位置为中心无损平滑缩放</td></tr>
             <tr><td><kbd>拖拽空白 / 鼠标中键 / 鼠标右键</kbd></td><td>平移画布视口</td></tr>
-            <tr><td><kbd>Enter</kbd> 或 <kbd>Space</kbd></td><td>提交/核验当前标注，并自动跳至<strong>下一条未标注</strong></td></tr>
-            <tr><td><kbd>Esc</kbd> 或 <kbd>Delete</kbd></td><td>清除当前标注框（若已保存会向后端发送 DELETE）</td></tr>
-            <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>切换到上一条 / 下一条</td></tr>
-            <tr><td><kbd>Shift + ←</kbd> / <kbd>Shift + →</kbd></td><td>快速跳至上一条 / 下一条未标注条目</td></tr>
-            <tr><td><kbd>Alt + ←</kbd> / <kbd>Alt + →</kbd></td><td>快速跳至上一条 / 下一条 <strong>AI 待审预标</strong> 条目</td></tr>
+            <tr><td><kbd>Enter</kbd> 或 <kbd>Space</kbd></td><td>提交/核验当前标注并自动跳至下一条待处理；在 <strong>AI 判空条目</strong>上按下 = 确认判空</td></tr>
+            <tr><td><kbd>X</kbd></td><td>确认无目标（判空）：以当前署名记录为「已确认判空」，自动跳转下一条</td></tr>
+            <tr><td><kbd>Esc</kbd> 或 <kbd>Delete</kbd></td><td>清除当前标注框（若已保存会向后端发送 DELETE，判空状态也会一并撤销）</td></tr>
+            <tr><td><kbd>H</kbd> / <kbd>L</kbd>（或 <kbd>←</kbd> / <kbd>→</kbd>）</td><td>切换到上一条 / 下一条</td></tr>
+            <tr><td><kbd>J</kbd> / <kbd>K</kbd>（或 <kbd>Alt + ←</kbd> / <kbd>Alt + →</kbd>）</td><td>快速跳至下一条 / 上一条 <strong>AI 待审条目</strong>（含 AI 预标框与 AI 判空）</td></tr>
+            <tr><td><kbd>N</kbd> / <kbd>Shift + N</kbd>（或 <kbd>Shift + ←</kbd> / <kbd>Shift + →</kbd>）</td><td>快速跳至下一条 / 上一条未处理条目</td></tr>
+            <tr><td><kbd>G</kbd> / <kbd>Shift + G</kbd></td><td>跳至第一条 / 最后一条</td></tr>
+            <tr><td><kbd>/</kbd></td><td>聚焦顶部图号跳转输入框（配合 <kbd>Enter</kbd> 跳转）</td></tr>
             <tr><td><kbd>0</kbd> 或 <kbd>R</kbd></td><td>重置视口（自适应居中）</td></tr>
             <tr><td><kbd>1</kbd></td><td>1:1 原始分辨率显示</td></tr>
             <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>放大 / 缩小画布</td></tr>

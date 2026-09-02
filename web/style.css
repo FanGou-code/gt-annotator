@@ -479,6 +479,25 @@ body, html {
   color: #ffffff;
 }
 
+.btn-warning {
+  background-color: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.btn-warning:hover {
+  background-color: #f59e0b;
+  color: #ffffff;
+}
+
+.nav-divider {
+  width: 1px;
+  height: 24px;
+  background-color: var(--border-color);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
 /* Canvas Workspace */
 .canvas-workspace {
   flex: 1;
