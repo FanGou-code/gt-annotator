@@ -42,21 +42,17 @@ JOURNAL_NAME = "annotations.jsonl"
 LOG_EVERY = 10
 
 SYSTEM_PROMPT = (
-    "你是一个专业的计算机视觉定位（Visual Grounding）专家。\n"
-    "给定一张图像和一个特定的目标描述（Query），你需要找出描述的目标并在图像中定位它。\n\n"
-    "【核心规范】\n"
-    "1. 坐标系规范：\n"
-    "   - 采用 [0, 1000] 归一化整数坐标 [xmin, ymin, xmax, ymax]。\n"
-    "   - xmin/xmax 分别为目标左/右边界距离左侧的比例（乘以 1000）；ymin/ymax 分别为上/下边界距离顶部的比例（乘以 1000）。\n"
-    "   - 必须确保 xmin < xmax 且 ymin < ymax。\n"
-    "2. 严谨拒识（针对无目标/错误 Query）：\n"
-    "   - 仔细对比 query 中的所有修饰属性（颜色、类别、数量、相对空间位置、朝向等）。\n"
-    "   - 如果图像中根本不存在所描述的目标，或者 query 存在明显事实错误，严禁强行圈选任何不相关物体！\n"
-    "   - 此时必须将 exists 设为 false，并将 box_1000 设为 null。\n"
-    "3. 输出格式要求：\n"
-    "   - 必须且仅输出一个合法的单行 JSON 字典，严禁输出 markdown 代码块标记，严禁包含任何额外解释。\n"
-    "   - 存在目标时格式：{\"exists\": true, \"box_1000\": [xmin, ymin, xmax, ymax], \"reason\": \"简述定位依据\"}\n"
-    "   - 目标不存在时格式：{\"exists\": false, \"box_1000\": null, \"reason\": \"简述不存在原因\"}"
+    "You are an expert visual grounding model.\n"
+    "Given an image and a referring expression query, locate the described target object in the image.\n\n"
+    "Rules:\n"
+    "1. Coordinates: Output normalized [0, 1000] integer coordinates [xmin, ymin, xmax, ymax] "
+    "relative to image width and height. Ensure xmin < xmax and ymin < ymax.\n"
+    "2. Strict Rejection: If the target object does NOT exist in the image, or the query describes "
+    "something absent, do NOT hallucinate or select unrelated objects. "
+    "Set exists to false and box_1000 to null.\n"
+    "3. Output Format: Output ONLY a single JSON object. No explanations, no markdown code blocks.\n"
+    'When object exists: {"exists": true, "box_1000": [xmin, ymin, xmax, ymax]}\n'
+    'When object does not exist: {"exists": false, "box_1000": null}'
 )
 
 
@@ -77,8 +73,8 @@ def encode_image_to_data_url(path: Path) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-def parse_vlm_response(content: str) -> tuple[bool, list[float] | None, str]:
-    """Parse model response into (exists, normalized_bbox, reason)."""
+def parse_vlm_response(content: str) -> tuple[bool, list[float] | None]:
+    """Parse model response into (exists, normalized_bbox)."""
     text = content.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
@@ -98,11 +94,10 @@ def parse_vlm_response(content: str) -> tuple[bool, list[float] | None, str]:
         raise ValueError(f"expected JSON object, got {type(data)}")
 
     exists = bool(data.get("exists", False))
-    reason = str(data.get("reason") or "").strip()
     box_1000 = data.get("box_1000")
 
     if not exists or box_1000 is None:
-        return False, None, reason
+        return False, None
 
     if not isinstance(box_1000, list) or len(box_1000) != 4:
         raise ValueError(f"box_1000 must be list of 4 integers, got {box_1000}")
@@ -110,7 +105,7 @@ def parse_vlm_response(content: str) -> tuple[bool, list[float] | None, str]:
     try:
         norm = [float(v) / 1000.0 for v in box_1000]
         clamped = normalize_bbox(norm)
-        return True, clamped, reason
+        return True, clamped
     except ValueError as exc:
         raise ValueError(f"invalid box coordinates {box_1000}: {exc}") from exc
 
@@ -122,11 +117,11 @@ def call_glm_once(
     image_data_url: str,
     query: str,
     timeout: float = 60.0,
-) -> tuple[bool, list[float] | None, str]:
+) -> tuple[bool, list[float] | None]:
     """Call GLM multimodal completions endpoint once."""
     user_content = [
         {"type": "image_url", "image_url": {"url": image_data_url}},
-        {"type": "text", "text": f"请在图像中定位该描述的目标物体：{query}"},
+        {"type": "text", "text": query},
     ]
 
     body = json.dumps(
@@ -278,11 +273,10 @@ def run(args: argparse.Namespace) -> int:
 
         exists = False
         bbox = None
-        reason = ""
 
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                exists, bbox, reason = call_glm_once(
+                exists, bbox = call_glm_once(
                     args.base_url,
                     args.model,
                     api_key,
@@ -324,7 +318,6 @@ def run(args: argparse.Namespace) -> int:
                     "id": item_id,
                     "bbox": None,
                     "annotator": f"{args.model}:absent",
-                    "reason": reason,
                     "ts": _now(),
                 }
                 with journal_path.open("a", encoding="utf-8") as fh:
@@ -334,9 +327,9 @@ def run(args: argparse.Namespace) -> int:
 
         if args.verbose:
             if exists and bbox:
-                _log(f"{item_id} [BBOX] {bbox} ({reason})")
+                _log(f"{item_id} [BBOX] {bbox}")
             else:
-                _log(f"{item_id} [ABSENT] {reason}")
+                _log(f"{item_id} [ABSENT]")
 
         progress.record(status_str)
 
