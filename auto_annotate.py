@@ -251,7 +251,6 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     progress = Progress(len(todo))
-    store_lock = threading.Lock()
 
     def annotate_one(item: dict) -> None:
         item_id = item["id"]
@@ -309,21 +308,12 @@ def run(args: argparse.Namespace) -> int:
                     sleep_time = min(2 ** (attempt - 1), 8) + random.random() * 0.5
                 time.sleep(sleep_time)
 
-        with store_lock:
-            if exists and bbox is not None:
-                store.set(item_id, bbox, annotator=args.model)
-                status_str = "found"
-            else:
-                absent_record = {
-                    "id": item_id,
-                    "bbox": None,
-                    "annotator": f"{args.model}:absent",
-                    "ts": _now(),
-                }
-                with journal_path.open("a", encoding="utf-8") as fh:
-                    fh.write(json.dumps(absent_record, ensure_ascii=False) + "\n")
-                    fh.flush()
-                status_str = "absent"
+        if exists and bbox is not None:
+            store.set(item_id, bbox, annotator=args.model)
+            status_str = "found"
+        else:
+            store.set_absent(item_id, args.model)
+            status_str = "absent"
 
         if args.verbose:
             if exists and bbox:
