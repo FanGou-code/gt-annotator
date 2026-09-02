@@ -413,6 +413,9 @@
       dom.queryZhText.textContent = '';
     }
 
+    // Recalculate canvas size immediately to account for any height shifts in the query panel
+    resizeCanvas(false);
+
     // Footer Info
     dom.footerItemInfo.textContent = `Item: ${item.id} (${state.currentIndex + 1}/${state.items.length})`;
     dom.footerAnnotatorInfo.textContent = `Annotator: ${item.annotator || '-'}`;
@@ -503,12 +506,27 @@
     return { width: rect.width, height: rect.height };
   }
 
-  function resizeCanvas() {
+  function resizeCanvas(fitImage = false) {
+    if (!dom.canvas) return;
     const rect = dom.canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
     const dpr = window.devicePixelRatio || 1;
-    dom.canvas.width = rect.width * dpr;
-    dom.canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
+    const targetW = Math.round(rect.width * dpr);
+    const targetH = Math.round(rect.height * dpr);
+
+    const sizeChanged = (dom.canvas.width !== targetW || dom.canvas.height !== targetH);
+    if (sizeChanged) {
+      dom.canvas.width = targetW;
+      dom.canvas.height = targetH;
+    }
+
+    // Always reset transform matrix directly to dpr to guarantee 1:1 crispness without accumulation
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    if (fitImage && state.currentImage && state.interaction.mode === 'none') {
+      fitImageToCanvas();
+    }
     redraw();
   }
 
@@ -654,8 +672,11 @@
 
   // --- Canvas Drawing ---
   function redraw() {
-    const { width, height } = getCanvasSize();
-    ctx.clearRect(0, 0, width, height);
+    // Thoroughly clear the entire physical canvas buffer to prevent ghosting/clipping
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, dom.canvas.width, dom.canvas.height);
+    ctx.restore();
 
     if (!state.currentImage) return;
 
@@ -1174,8 +1195,16 @@
 
   // --- Event Bindings ---
   function bindEvents() {
-    // Window & Canvas Resize
-    window.addEventListener('resize', resizeCanvas);
+    // Window & Canvas Resize Observer
+    window.addEventListener('resize', () => resizeCanvas(true));
+
+    if (window.ResizeObserver && dom.canvasContainer) {
+      const resizeObserver = new ResizeObserver(() => {
+        // Sync canvas buffer with container size shifts (e.g. query panel expansion/collapse)
+        resizeCanvas(true);
+      });
+      resizeObserver.observe(dom.canvasContainer);
+    }
 
     // Canvas Mouse Events
     dom.canvas.addEventListener('wheel', handleWheel, { passive: false });

@@ -284,6 +284,25 @@ body, html {
   max-height: 120px;
   overflow-y: auto;
   user-select: text;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+
+.query-content::-webkit-scrollbar {
+  width: 5px;
+}
+
+.query-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.query-content::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: var(--radius-full);
+}
+
+.query-content::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
 }
 
 .query-en-wrap, .query-zh-wrap {
