@@ -62,16 +62,28 @@ python3 translate.py --manifest data/manifest.json \
 # -v 逐条打印译文；另开终端 tail -f data/translations.jsonl 实时围观
 ```
 
-### 3. 启动服务并标注
+### 3.（可选）使用 GLM-4.6V 批量自动预打标（人机协同）
+
+可使用大语言多模态模型对未标注条目进行批量初标（自动跳过已人工标注条目，断点续跑）：
+
+```bash
+export API_KEY=sk-你的密钥
+python3 auto_annotate.py --manifest data/manifest.json --data-dir data \
+    --model glm-4.6v --concurrency 4 -v
+# 支持 --limit N 先测几条；自动识别无目标 Query 并置空；打标记录标记为 annotator: "glm-4.6v"
+```
+
+### 4. 启动服务并人工审查/标注
 
 ```bash
 python3 server.py --manifest data/manifest.json --data-dir data \
-    --host 0.0.0.0 --port 8765 --token 自定密码
+    --host 0.0.0.0 --port 8765
 ```
 
-浏览器打开 `http://<主机IP>:8765/`，首次访问在弹窗填入 token（存浏览器
-localStorage，之后免填）。跨机器访问推荐 SSH 隧道：
-`ssh -N -L 8765:127.0.0.1:8765 user@主机`，浏览器用 `localhost:8765`。
+浏览器打开 `http://<主机IP>:8765/`（本地直接打开 `http://localhost:8765`）。
+- 网页会自动用紫色高亮区分 `🤖 待审AI预标`，绿色区分 `已核验 (人工)`；
+- 快捷键 `Alt + ←` / `Alt + →` 或顶部按钮可快速在 AI 预标条目之间跳转审核；
+- 审查无误直接敲 `Enter` 确认，自动转为人工核验并跳转下一条。
 
 ## 输出说明
 

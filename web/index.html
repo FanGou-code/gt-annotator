@@ -47,11 +47,6 @@
           <input type="text" id="annotator-input" placeholder="匿名" maxlength="64" autocomplete="off" />
         </div>
 
-        <!-- Token Settings -->
-        <button id="token-btn" class="btn btn-icon btn-sm" title="鉴权 Token 设置">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-        </button>
-
         <!-- Help / Shortcuts -->
         <button id="help-btn" class="btn btn-icon btn-sm" title="快捷键与帮助 (?)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -95,6 +90,15 @@
           </button>
           <button id="next-unannotated-btn" class="btn btn-subtle" title="下一未标 (Shift + →)">
             下一未标
+          </button>
+        </div>
+
+        <div class="btn-group">
+          <button id="prev-ai-btn" class="btn btn-ai" title="上一条AI预标 (Alt + ←)">
+            上一AI
+          </button>
+          <button id="next-ai-btn" class="btn btn-ai" title="下一条AI预标 (Alt + →)">
+            下一AI
           </button>
         </div>
 
@@ -167,29 +171,6 @@
     </footer>
   </div>
 
-  <!-- Token Modal -->
-  <div id="token-modal" class="modal hidden">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>访问 Token 设置</h3>
-        <button class="modal-close" id="token-modal-close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p>若服务端启动时开启了 <code>--token</code> 参数，所有 API 请求需携带此 Token 鉴权。</p>
-        <div class="form-group">
-          <label for="token-modal-input">X-Auth-Token:</label>
-          <input type="text" id="token-modal-input" placeholder="输入 Token（若未设可留空）" autocomplete="off" />
-        </div>
-        <div id="token-modal-alert" class="alert alert-error hidden"></div>
-      </div>
-      <div class="modal-footer">
-        <button id="token-modal-cancel" class="btn btn-secondary">取消</button>
-        <button id="token-modal-save" class="btn btn-primary">保存并连接</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Help / Shortcuts Modal -->
   <div id="help-modal" class="modal hidden">
     <div class="modal-backdrop"></div>
@@ -207,10 +188,11 @@
             <tr><td><kbd>鼠标左键拖拽</kbd></td><td>在画布绘制新框 / 拖拽移动现有框 / 按住 8 个控制点缩放</td></tr>
             <tr><td><kbd>滚轮</kbd></td><td>以鼠标所在位置为中心无损平滑缩放</td></tr>
             <tr><td><kbd>拖拽空白 / 鼠标中键 / 鼠标右键</kbd></td><td>平移画布视口</td></tr>
-            <tr><td><kbd>Enter</kbd> 或 <kbd>Space</kbd></td><td>提交当前标注，并自动跳至<strong>下一条未标注</strong></td></tr>
+            <tr><td><kbd>Enter</kbd> 或 <kbd>Space</kbd></td><td>提交/核验当前标注，并自动跳至<strong>下一条未标注</strong></td></tr>
             <tr><td><kbd>Esc</kbd> 或 <kbd>Delete</kbd></td><td>清除当前标注框（若已保存会向后端发送 DELETE）</td></tr>
             <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>切换到上一条 / 下一条</td></tr>
             <tr><td><kbd>Shift + ←</kbd> / <kbd>Shift + →</kbd></td><td>快速跳至上一条 / 下一条未标注条目</td></tr>
+            <tr><td><kbd>Alt + ←</kbd> / <kbd>Alt + →</kbd></td><td>快速跳至上一条 / 下一条 <strong>AI 待审预标</strong> 条目</td></tr>
             <tr><td><kbd>0</kbd> 或 <kbd>R</kbd></td><td>重置视口（自适应居中）</td></tr>
             <tr><td><kbd>1</kbd></td><td>1:1 原始分辨率显示</td></tr>
             <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>放大 / 缩小画布</td></tr>

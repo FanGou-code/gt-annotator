@@ -8,7 +8,6 @@
   'use strict';
 
   // --- Constants & Storage Keys ---
-  const STORAGE_KEY_TOKEN = 'gt_annotator_auth_token';
   const STORAGE_KEY_ANNOTATOR = 'gt_annotator_name';
   const MIN_BOX_SIZE_PX = 4; // Minimum drag size in natural image pixels to avoid zero-area boxes
   const HANDLE_RADIUS_SCREEN = 7; // Radius of resize handles in canvas screen pixels
@@ -61,7 +60,6 @@
     items: [],
     currentIndex: 0,
     annotator: localStorage.getItem(STORAGE_KEY_ANNOTATOR) || '',
-    token: localStorage.getItem(STORAGE_KEY_TOKEN) || '',
     
     // Cached Images with LRU eviction
     imageCache: new ImageLRUCache(IMAGE_CACHE_CAPACITY),
@@ -105,7 +103,6 @@
     jumpInput: document.getElementById('jump-input'),
     jumpBtn: document.getElementById('jump-btn'),
     annotatorInput: document.getElementById('annotator-input'),
-    tokenBtn: document.getElementById('token-btn'),
     helpBtn: document.getElementById('help-btn'),
 
     // Query Bar
@@ -118,6 +115,8 @@
     nextBtn: document.getElementById('next-btn'),
     prevUnannotatedBtn: document.getElementById('prev-unannotated-btn'),
     nextUnannotatedBtn: document.getElementById('next-unannotated-btn'),
+    prevAiBtn: document.getElementById('prev-ai-btn'),
+    nextAiBtn: document.getElementById('next-ai-btn'),
     clearBtn: document.getElementById('clear-btn'),
     saveBtn: document.getElementById('save-btn'),
 
@@ -143,13 +142,6 @@
     footerBboxInfo: document.getElementById('footer-bbox-info'),
 
     // Modals
-    tokenModal: document.getElementById('token-modal'),
-    tokenModalInput: document.getElementById('token-modal-input'),
-    tokenModalAlert: document.getElementById('token-modal-alert'),
-    tokenModalClose: document.getElementById('token-modal-close'),
-    tokenModalCancel: document.getElementById('token-modal-cancel'),
-    tokenModalSave: document.getElementById('token-modal-save'),
-
     helpModal: document.getElementById('help-modal'),
     helpModalClose: document.getElementById('help-modal-close'),
     helpModalOk: document.getElementById('help-modal-ok'),
@@ -159,12 +151,9 @@
 
   const ctx = dom.canvas.getContext('2d');
 
-  // --- API Client with Auth ---
+  // --- API Client ---
   async function apiFetch(url, options = {}) {
     const headers = options.headers || {};
-    if (state.token) {
-      headers['X-Auth-Token'] = state.token;
-    }
     const fetchOptions = {
       ...options,
       headers: {
@@ -174,16 +163,9 @@
     };
 
     try {
-      const resp = await fetch(url, fetchOptions);
-      if (resp.status === 401) {
-        showTokenModal('鉴权失败 (401 Unauthorized)：请输入有效 Token');
-        throw new Error('401 Unauthorized');
-      }
-      return resp;
+      return await fetch(url, fetchOptions);
     } catch (err) {
-      if (err.message !== '401 Unauthorized') {
-        showToast('网络请求失败: ' + err.message, 'error');
-      }
+      showToast(`网络请求异常: ${err.message}`, 'error');
       throw err;
     }
   }
@@ -396,8 +378,17 @@
     }
     
     if (item.bbox) {
-      dom.annotationStatusBadge.textContent = item.annotator ? `已标注 (${item.annotator})` : '已标注';
-      dom.annotationStatusBadge.className = 'badge badge-annotated';
+      const isAi = item.annotator && (item.annotator.startsWith('glm') || item.annotator.includes('ai'));
+      if (isAi) {
+        dom.annotationStatusBadge.textContent = `🤖 待审AI预标 (${item.annotator})`;
+        dom.annotationStatusBadge.className = 'badge badge-ai';
+      } else {
+        dom.annotationStatusBadge.textContent = item.annotator ? `已核验 (${item.annotator})` : '已标注';
+        dom.annotationStatusBadge.className = 'badge badge-annotated';
+      }
+    } else if (item.annotator && item.annotator.includes('absent')) {
+      dom.annotationStatusBadge.textContent = `⚠️ 目标不存在 (AI判空)`;
+      dom.annotationStatusBadge.className = 'badge badge-absent';
     } else {
       dom.annotationStatusBadge.textContent = '未标注';
       dom.annotationStatusBadge.className = 'badge badge-unannotated';
@@ -456,28 +447,10 @@
     dom.canvasLoadingText.textContent = '加载图片中...';
 
     const img = new Image();
-    let objectUrl = null;
-
-    if (state.token) {
-      try {
-        const resp = await apiFetch(url);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const blob = await resp.blob();
-        objectUrl = URL.createObjectURL(blob);
-        img.src = objectUrl;
-      } catch (err) {
-        state.isImageLoading = false;
-        dom.canvasLoading.classList.add('hidden');
-        dom.canvasError.classList.remove('hidden');
-        dom.canvasErrorText.textContent = '图片下载失败: ' + err.message;
-        return;
-      }
-    } else {
-      img.src = url;
-    }
+    img.src = url;
 
     img.onload = () => {
-      state.imageCache.set(url, img, objectUrl);
+      state.imageCache.set(url, img);
       if (getCurrentItem()?.image_url === url) {
         state.currentImage = img;
         state.isImageLoading = false;
@@ -713,8 +686,15 @@
     const w = Math.abs(p2.x - p1.x);
     const h = Math.abs(p2.y - p1.y);
 
+    const curItem = getCurrentItem();
+    const isAi = curItem && curItem.annotator && (curItem.annotator.startsWith('glm') || curItem.annotator.includes('ai'));
+    const boxColor = isAi ? '#c084fc' : '#06b6d4';
+    const boxFill = isAi ? 'rgba(168, 85, 247, 0.16)' : 'rgba(6, 182, 212, 0.16)';
+    const handleBorder = isAi ? '#9333ea' : '#0891b2';
+    const badgeColor = isAi ? '#d8b4fe' : '#38bdf8';
+
     // Box semi-transparent fill
-    ctx.fillStyle = 'rgba(6, 182, 212, 0.16)';
+    ctx.fillStyle = boxFill;
     ctx.fillRect(x, y, w, h);
 
     // Box outer dark outline (for contrast on light images)
@@ -723,7 +703,7 @@
     ctx.strokeRect(x, y, w, h);
 
     // Box inner bright border
-    ctx.strokeStyle = '#06b6d4';
+    ctx.strokeStyle = boxColor;
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, w, h);
 
@@ -737,7 +717,7 @@
       ctx.fill();
 
       // Handle Outer Stroke
-      ctx.strokeStyle = '#0891b2';
+      ctx.strokeStyle = handleBorder;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(h.x, h.y, HANDLE_RADIUS_SCREEN, 0, Math.PI * 2);
@@ -751,7 +731,7 @@
     }
 
     // Badge with coordinates above box
-    const badgeText = `${Math.round(Math.abs(imgRect.x2 - imgRect.x1))}×${Math.round(Math.abs(imgRect.y2 - imgRect.y1))} px`;
+    const badgeText = (isAi ? '🤖 [AI预标] ' : '') + `${Math.round(Math.abs(imgRect.x2 - imgRect.x1))}×${Math.round(Math.abs(imgRect.y2 - imgRect.y1))} px`;
     ctx.font = '11px ui-monospace, monospace';
     const textMetrics = ctx.measureText(badgeText);
     const badgeW = textMetrics.width + 10;
@@ -761,11 +741,11 @@
 
     ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
     ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
-    ctx.strokeStyle = '#06b6d4';
+    ctx.strokeStyle = boxColor;
     ctx.lineWidth = 1;
     ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
 
-    ctx.fillStyle = '#38bdf8';
+    ctx.fillStyle = badgeColor;
     ctx.textBaseline = 'middle';
     ctx.fillText(badgeText, badgeX + 5, badgeY + badgeH / 2);
   }
@@ -1022,10 +1002,15 @@
       state.activeBbox = [...result.bbox];
 
       updateOverallProgress();
-      showToast(`已保存 #${state.currentIndex + 1} (${item.id})`, 'success');
-
-      // Auto-jump to next unannotated
-      goToNextUnannotated();
+      // Smart Auto-Jump: prioritize next unreviewed AI item if any exist ahead, otherwise next unannotated
+      const hasNextAi = state.items.slice(state.currentIndex + 1).some(
+        (it) => it.bbox && it.annotator && (it.annotator.startsWith('glm') || it.annotator.includes('ai'))
+      );
+      if (hasNextAi) {
+        goToNextAi();
+      } else {
+        goToNextUnannotated();
+      }
     } catch (err) {
       showToast('保存失败: ' + err.message, 'error');
     } finally {
@@ -1075,30 +1060,27 @@
     }
   }
 
-  // --- Token Dialog ---
-  function showTokenModal(alertMsg = '') {
-    dom.tokenModalInput.value = state.token;
-    if (alertMsg) {
-      dom.tokenModalAlert.textContent = alertMsg;
-      dom.tokenModalAlert.classList.remove('hidden');
-    } else {
-      dom.tokenModalAlert.classList.add('hidden');
+  // --- AI Annotation Quick Navigation ---
+  function goToPrevAi() {
+    for (let i = state.currentIndex - 1; i >= 0; i--) {
+      const it = state.items[i];
+      if (it && it.bbox && it.annotator && (it.annotator.startsWith('glm') || it.annotator.includes('ai'))) {
+        goToIndex(i);
+        return;
+      }
     }
-    dom.tokenModal.classList.remove('hidden');
-    dom.tokenModalInput.focus();
+    showToast('前面没有待审核的 AI 预标条目', 'info');
   }
 
-  function hideTokenModal() {
-    dom.tokenModal.classList.add('hidden');
-  }
-
-  function saveToken() {
-    const token = (dom.tokenModalInput.value || '').trim();
-    state.token = token;
-    localStorage.setItem(STORAGE_KEY_TOKEN, token);
-    hideTokenModal();
-    showToast('Token 已保存，正在连接...', 'info');
-    loadSession();
+  function goToNextAi() {
+    for (let i = state.currentIndex + 1; i < state.items.length; i++) {
+      const it = state.items[i];
+      if (it && it.bbox && it.annotator && (it.annotator.startsWith('glm') || it.annotator.includes('ai'))) {
+        goToIndex(i);
+        return;
+      }
+    }
+    showToast('后面没有待审核的 AI 预标条目', 'info');
   }
 
   // --- Help Dialog ---
@@ -1139,7 +1121,9 @@
 
     if (e.key === 'ArrowRight') {
       e.preventDefault();
-      if (e.shiftKey) {
+      if (e.altKey) {
+        goToNextAi();
+      } else if (e.shiftKey) {
         goToNextUnannotated();
       } else {
         nextItem();
@@ -1149,7 +1133,9 @@
 
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      if (e.shiftKey) {
+      if (e.altKey) {
+        goToPrevAi();
+      } else if (e.shiftKey) {
         goToPrevUnannotated();
       } else {
         prevItem();
@@ -1218,6 +1204,8 @@
     dom.nextBtn.addEventListener('click', nextItem);
     dom.prevUnannotatedBtn.addEventListener('click', goToPrevUnannotated);
     dom.nextUnannotatedBtn.addEventListener('click', goToNextUnannotated);
+    dom.prevAiBtn.addEventListener('click', goToPrevAi);
+    dom.nextAiBtn.addEventListener('click', goToNextAi);
     dom.clearBtn.addEventListener('click', clearBbox);
     dom.saveBtn.addEventListener('click', saveBbox);
 
@@ -1240,7 +1228,7 @@
 
     // Annotator Input
     dom.annotatorInput.value = state.annotator;
-    dom.annotatorInput.addEventListener('change', () => {
+    dom.annotatorInput.addEventListener('input', () => {
       state.annotator = dom.annotatorInput.value.trim();
       localStorage.setItem(STORAGE_KEY_ANNOTATOR, state.annotator);
     });
@@ -1269,11 +1257,6 @@
     });
 
     // Modals
-    dom.tokenBtn.addEventListener('click', () => showTokenModal());
-    dom.tokenModalClose.addEventListener('click', hideTokenModal);
-    dom.tokenModalCancel.addEventListener('click', hideTokenModal);
-    dom.tokenModalSave.addEventListener('click', saveToken);
-
     dom.helpBtn.addEventListener('click', showHelpModal);
     dom.helpModalClose.addEventListener('click', hideHelpModal);
     dom.helpModalOk.addEventListener('click', hideHelpModal);

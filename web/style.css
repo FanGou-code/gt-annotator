@@ -124,6 +124,18 @@ body, html {
   border: 1px solid rgba(16, 185, 129, 0.4);
 }
 
+.badge-ai {
+  background: rgba(168, 85, 247, 0.18);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.45);
+}
+
+.badge-absent {
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.4);
+}
+
 .badge-unannotated {
   background: var(--accent-warning-bg);
   color: var(--accent-warning);
@@ -442,6 +454,18 @@ body, html {
 .btn-subtle:hover {
   background: var(--bg-hover);
   color: var(--text-main);
+}
+
+.btn-ai {
+  background: rgba(168, 85, 247, 0.12);
+  color: #d8b4fe;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+.btn-ai:hover {
+  background: rgba(168, 85, 247, 0.25);
+  color: #f3e8ff;
+  border-color: #a855f7;
 }
 
 .btn-danger {

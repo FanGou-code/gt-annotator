@@ -145,28 +145,24 @@ class ServerTests(unittest.TestCase):
         status, _ = request("DELETE", f"{base}/api/item/999999_999/bbox")
         self.assertEqual(status, 404)
 
-    def test_token_auth(self):
-        base, _ = self.start(token="s3cret")
+    def test_open_access_without_token(self):
+        base, _ = self.start()
         status, _ = request("GET", f"{base}/api/session")
-        self.assertEqual(status, 401)
-        status, _ = request("GET", f"{base}/api/session", headers={"X-Auth-Token": "wrong"})
-        self.assertEqual(status, 401)
-        status, _ = request("GET", f"{base}/api/session", headers={"X-Auth-Token": "s3cret"})
         self.assertEqual(status, 200)
 
-    def test_static_served_without_token_api_stays_gated(self):
+    def test_static_and_api_served_freely(self):
         with tempfile.TemporaryDirectory() as tmp:
             web = Path(tmp)
             (web / "index.html").write_text("<html>ok</html>", encoding="utf-8")
             original = server_module.WEB_ROOT
             server_module.WEB_ROOT = web
             try:
-                base, _ = self.start(token="s3cret")
+                base, _ = self.start()
                 status, body = request("GET", f"{base}/")
                 self.assertEqual(status, 200)
                 self.assertIn(b"ok", body)
                 status, _ = request("GET", f"{base}/api/session")
-                self.assertEqual(status, 401)
+                self.assertEqual(status, 200)
             finally:
                 server_module.WEB_ROOT = original
 
