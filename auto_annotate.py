@@ -137,6 +137,7 @@ def call_glm_once(
                 {"role": "user", "content": user_content},
             ],
             "thinking": {"type": "disabled"},
+            "response_format": {"type": "json_object"},
             "temperature": 0.1,
         }
     ).encode("utf-8")
@@ -291,15 +292,25 @@ def run(args: argparse.Namespace) -> int:
                 )
                 break
             except (HTTPError, URLError, ValueError, TimeoutError, OSError) as exc:
+                detail = ""
+                if isinstance(exc, HTTPError):
+                    try:
+                        detail = exc.read(512).decode("utf-8", errors="replace")
+                    except Exception:
+                        pass
                 if attempt == MAX_ATTEMPTS:
                     progress.record("failed")
-                    _log(f"FAIL {item_id}: {exc}")
+                    _log(f"FAIL {item_id}: {exc} {detail}".strip())
                     return
                 is_429 = isinstance(exc, HTTPError) and exc.code == 429
                 if is_429:
-                    sleep_time = min(3.0 * (2 ** (attempt - 1)), 25.0) + random.random() * 1.5
-                    if args.verbose or attempt >= 2:
-                        _log(f"Rate limited (429) on {item_id}, cooling down {sleep_time:.1f}s (retry {attempt}/{MAX_ATTEMPTS})...")
+                    retry_after = exc.headers.get("Retry-After") if hasattr(exc, "headers") and exc.headers else None
+                    try:
+                        parsed_delay = float(retry_after) if retry_after else 0.0
+                    except ValueError:
+                        parsed_delay = 0.0
+                    sleep_time = parsed_delay if parsed_delay > 0.0 else min(2.0 * (2 ** (attempt - 1)), 15.0) + random.random()
+                    _log(f"Rate limited (429) on {item_id}, cooling down {sleep_time:.1f}s (retry {attempt}/{MAX_ATTEMPTS})...")
                 else:
                     sleep_time = min(2 ** (attempt - 1), 8) + random.random() * 0.5
                 time.sleep(sleep_time)
