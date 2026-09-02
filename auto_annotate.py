@@ -37,7 +37,7 @@ from store import AnnotationStore
 DEFAULT_MODEL = "glm-4.6v"
 DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 DEFAULT_CONCURRENCY = 4
-MAX_ATTEMPTS = 4
+MAX_ATTEMPTS = 6
 JOURNAL_NAME = "annotations.jsonl"
 LOG_EVERY = 10
 
@@ -295,7 +295,14 @@ def run(args: argparse.Namespace) -> int:
                     progress.record("failed")
                     _log(f"FAIL {item_id}: {exc}")
                     return
-                time.sleep(min(2 ** (attempt - 1), 8) + random.random() * 0.5)
+                is_429 = isinstance(exc, HTTPError) and exc.code == 429
+                if is_429:
+                    sleep_time = min(3.0 * (2 ** (attempt - 1)), 25.0) + random.random() * 1.5
+                    if args.verbose or attempt >= 2:
+                        _log(f"Rate limited (429) on {item_id}, cooling down {sleep_time:.1f}s (retry {attempt}/{MAX_ATTEMPTS})...")
+                else:
+                    sleep_time = min(2 ** (attempt - 1), 8) + random.random() * 0.5
+                time.sleep(sleep_time)
 
         with store_lock:
             if exists and bbox is not None:
