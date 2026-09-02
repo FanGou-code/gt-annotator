@@ -136,6 +136,19 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(store_a.absent_items(), {"b2": "bob:absent"})
         self.assertEqual(store_a.annotated_count(), 1)
 
+    def test_own_write_does_not_mask_external_appends(self):
+        # Regression: set() used to re-stat the journal signature right after
+        # its own append; records other writers had appended in between were
+        # then marked as "already read" and never loaded into memory.
+        store_a = AnnotationStore(self.data_dir)
+        store_b = AnnotationStore(self.data_dir)
+        store_b.set("b1", BOX_B, annotator="bob")
+        store_a.set("a1", BOX_A, annotator="alice")
+        self.assertEqual(store_a.get("b1"), BOX_B)
+        store_b.set("b2", [0.7, 0.7, 0.8, 0.8])
+        self.assertEqual(store_a.get("b2"), [0.7, 0.7, 0.8, 0.8])
+        self.assertEqual(store_a.annotated_count(), 3)
+
     def test_torn_tail_line_is_ignored(self):
         store = AnnotationStore(self.data_dir)
         store.set("id1", BOX_A)

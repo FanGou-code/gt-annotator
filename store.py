@@ -113,10 +113,19 @@ class AnnotationStore:
 
     def _refresh_locked(self) -> None:
         """Hot-reload in-memory state if another process appended to the journal."""
-        sig = self._journal_signature()
-        if sig != self._journal_sig:
-            self._state, self._meta, self._absent = self._read_journal_state()
-            self._journal_sig = sig
+        for _ in range(5):
+            sig = self._journal_signature()
+            if sig == self._journal_sig:
+                return
+            state, meta, absent = self._read_journal_state()
+            # Concurrent writers may have appended while we replayed; only
+            # commit the replay if the file is unchanged since it started,
+            # otherwise the new tail would be swallowed by this signature.
+            if self._journal_signature() == sig:
+                self._state, self._meta, self._absent = state, meta, absent
+                self._journal_sig = sig
+                return
+        # Journal kept changing under us; leave state as-is, next read retries.
 
     # -- reads ---------------------------------------------------------------
 
@@ -157,7 +166,9 @@ class AnnotationStore:
             self._state[item_id] = bbox
             self._meta[item_id] = {"annotator": annotator, "ts": record["ts"]}
             self._absent.pop(item_id, None)
-            self._journal_sig = self._journal_signature()
+            # Deliberately do NOT advance _journal_sig here: other processes
+            # may have appended before our append, and stat-ing now would
+            # mark those unread records as seen. The next read re-replays.
             self._write_snapshots()
         return bbox
 
@@ -174,7 +185,6 @@ class AnnotationStore:
             self._state.pop(item_id, None)
             self._meta[item_id] = {"annotator": record["annotator"], "ts": record["ts"]}
             self._absent[item_id] = record["annotator"]
-            self._journal_sig = self._journal_signature()
             self._write_snapshots()
         return {"id": item_id, "bbox": None, "annotator": record["annotator"]}
 
@@ -185,7 +195,6 @@ class AnnotationStore:
             self._state.pop(item_id, None)
             self._meta.pop(item_id, None)
             self._absent.pop(item_id, None)
-            self._journal_sig = self._journal_signature()
             self._write_snapshots()
 
     def _append(self, record: dict) -> None:
@@ -198,6 +207,12 @@ class AnnotationStore:
     def _write_snapshots(self) -> None:
         # Caller holds the lock. Re-derive from the journal instead of the
         # in-memory state so entries written by other processes survive.
-        state, _meta, absent = self._read_journal_state()
+        state: dict[str, list[float]] = {}
+        absent: dict[str, str] = {}
+        for _ in range(5):
+            sig = self._journal_signature()
+            state, _meta, absent = self._read_journal_state()
+            if self._journal_signature() == sig:
+                break
         _atomic_write_json(self.snapshot_path, state)
         _atomic_write_json(self.absent_path, absent)
