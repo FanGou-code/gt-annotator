@@ -136,6 +136,7 @@ def call_glm_once(
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],
+            "thinking": {"type": "disabled"},
             "temperature": 0.1,
         }
     ).encode("utf-8")
