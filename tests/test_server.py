@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from server import create_server
+from store import ABSENT_SNAPSHOT_NAME
 import server as server_module
 
 PNG_1PX = base64.b64decode(
@@ -60,13 +61,12 @@ class ServerTests(unittest.TestCase):
         self.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         self.data_dir = self.root / "annotations"
 
-    def start(self, token: str = ""):
+    def start(self):
         server, state = create_server(
             manifest_path=self.manifest_path,
             data_dir=self.data_dir,
             host="127.0.0.1",
             port=0,
-            token=token,
         )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -145,7 +145,7 @@ class ServerTests(unittest.TestCase):
         status, _ = request("DELETE", f"{base}/api/item/999999_999/bbox")
         self.assertEqual(status, 404)
 
-    def test_open_access_without_token(self):
+    def test_open_access(self):
         base, _ = self.start()
         status, _ = request("GET", f"{base}/api/session")
         self.assertEqual(status, 200)
@@ -177,6 +177,56 @@ class ServerTests(unittest.TestCase):
                 self.assertIn("error", payload)
             finally:
                 server_module.WEB_ROOT = original
+
+    def test_confirm_absent_roundtrip(self):
+        base, state = self.start()
+        status, payload = request(
+            "PUT", f"{base}/api/item/000001_001/absent", payload={"annotator": "alice"}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["annotator"], "alice:absent")
+        self.assertIsNone(payload["bbox"])
+        status, session = request("GET", f"{base}/api/session")
+        first = session["items"][0]
+        self.assertIsNone(first["bbox"])
+        self.assertEqual(first["annotator"], "alice:absent")
+        status, progress = request("GET", f"{base}/api/progress")
+        self.assertEqual(progress["absent"], 1)
+        self.assertEqual(progress["annotated"], 0)
+        absent_snapshot = json.loads(
+            (self.data_dir / ABSENT_SNAPSHOT_NAME).read_text(encoding="utf-8")
+        )
+        self.assertEqual(absent_snapshot, {"000001_001": "alice:absent"})
+        # DELETE reverts the absence confirmation back to unannotated
+        status, _ = request("DELETE", f"{base}/api/item/000001_001/bbox")
+        self.assertEqual(status, 200)
+        status, session = request("GET", f"{base}/api/session")
+        self.assertIsNone(session["items"][0]["annotator"])
+        status, progress = request("GET", f"{base}/api/progress")
+        self.assertEqual(progress["absent"], 0)
+
+    def test_confirm_absent_validation_and_box_override(self):
+        base, state = self.start()
+        status, _ = request("PUT", f"{base}/api/item/000001_001/absent", payload={})
+        self.assertEqual(status, 400)
+        status, _ = request("PUT", f"{base}/api/item/000001_001/absent", payload={"annotator": ""})
+        self.assertEqual(status, 400)
+        status, _ = request(
+            "PUT", f"{base}/api/item/999999_999/absent", payload={"annotator": "alice"}
+        )
+        self.assertEqual(status, 404)
+        # an absence verdict overrides a previously saved box
+        status, _ = request(
+            "PUT", f"{base}/api/item/000001_001/bbox", payload={"bbox": BOX, "annotator": "alice"}
+        )
+        self.assertEqual(status, 200)
+        status, payload = request(
+            "PUT", f"{base}/api/item/000001_001/absent", payload={"annotator": "alice"}
+        )
+        self.assertEqual(status, 200)
+        status, session = request("GET", f"{base}/api/session")
+        self.assertIsNone(session["items"][0]["bbox"])
+        self.assertEqual(state.store.annotated_count(), 0)
 
     def test_state_resumes_across_restart(self):
         base, _ = self.start()

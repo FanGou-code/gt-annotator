@@ -7,7 +7,7 @@ files in the main project so annotations can be scored directly.
 Usage::
 
     python server.py --manifest data/manifest.json --data-dir data \
-        --host 0.0.0.0 --port 8765 [--token SECRET]
+        --host 0.0.0.0 --port 8765
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from store import AnnotationStore
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 WEB_ROOT = PROJECT_ROOT / "web"
-AUTH_HEADER = "X-Auth-Token"
 MAX_BODY_BYTES = 1_000_000
 STATIC_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -94,7 +93,6 @@ class AnnotatorState:
         items: list[dict],
         translations: dict[str, str],
         store: AnnotationStore,
-        token: str,
     ) -> None:
         self.manifest_name = manifest_name
         self.images_root = Path(images_root).resolve()
@@ -103,7 +101,6 @@ class AnnotatorState:
         self.image_paths = {item["image"] for item in items}
         self.translations = translations
         self.store = store
-        self.token = token
 
     def session_payload(self) -> dict:
         payload_items = []
@@ -134,10 +131,13 @@ class AnnotatorState:
             for item in self.items
             if self.store.get(item["id"]) is not None
         }
+        manifest_ids = {item["id"] for item in self.items}
+        absent_in_manifest = set(self.store.absent_items()) & manifest_ids
         return {
             "manifest": self.manifest_name,
             "total_items": len(self.items),
             "annotated": self.store.annotated_count(),
+            "absent": len(absent_in_manifest),
             "total_images": len(images),
             "annotated_images": len(annotated_images),
         }
@@ -206,18 +206,10 @@ class AnnotationHandler(BaseHTTPRequestHandler):
             raise ValueError("request body must be a JSON object")
         return data
 
-    def _authorized(self) -> bool:
-        return True
-
     # -- routing -----------------------------------------------------------
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        # Static frontend must stay reachable without a token (the token is
-        # entered in the browser afterwards); data routes stay gated.
-        is_data_route = parsed.path in ("/api/session", "/api/progress", "/image")
-        if is_data_route and not self._authorized():
-            return self._send_json({"error": "unauthorized"}, 401)
         if parsed.path == "/api/session":
             return self._send_json(self.state.session_payload())
         if parsed.path == "/api/progress":
@@ -237,11 +229,16 @@ class AnnotationHandler(BaseHTTPRequestHandler):
         return self._serve_static(parsed.path)
 
     def do_PUT(self) -> None:
-        if not self._authorized():
-            return self._send_json({"error": "unauthorized"}, 401)
-        item_id = self._match_bbox_route(urlparse(self.path).path, "PUT")
-        if item_id is None:
-            return self._send_json({"error": "not found"}, 404)
+        path = urlparse(self.path).path
+        item_id = self._match_item_route(path, "/bbox")
+        if item_id is not None:
+            return self._handle_put_bbox(item_id)
+        item_id = self._match_item_route(path, "/absent")
+        if item_id is not None:
+            return self._handle_put_absent(item_id)
+        return self._send_json({"error": "not found"}, 404)
+
+    def _handle_put_bbox(self, item_id: str) -> None:
         if item_id not in self.state.item_by_id:
             return self._send_json({"error": f"unknown item id: {item_id}"}, 404)
         try:
@@ -258,10 +255,26 @@ class AnnotationHandler(BaseHTTPRequestHandler):
         saved = self.state.store.set(item_id, bbox, annotator)
         return self._send_json({"id": item_id, "bbox": saved, "annotated": True})
 
+    def _handle_put_absent(self, item_id: str) -> None:
+        if item_id not in self.state.item_by_id:
+            return self._send_json({"error": f"unknown item id: {item_id}"}, 404)
+        try:
+            body = self._read_json_body()
+        except (ValueError, json.JSONDecodeError) as exc:
+            return self._send_json({"error": str(exc)}, 400)
+        annotator = body.get("annotator")
+        if not isinstance(annotator, str) or not annotator.strip() or len(annotator) > 64:
+            return self._send_json(
+                {"error": "annotator (non-empty string, max 64 chars) is required to confirm absence"},
+                400,
+            )
+        record = self.state.store.set_absent(item_id, annotator.strip())
+        return self._send_json(
+            {"id": item_id, "bbox": None, "annotator": record["annotator"], "annotated": False}
+        )
+
     def do_DELETE(self) -> None:
-        if not self._authorized():
-            return self._send_json({"error": "unauthorized"}, 401)
-        item_id = self._match_bbox_route(urlparse(self.path).path, "DELETE")
+        item_id = self._match_item_route(urlparse(self.path).path, "/bbox")
         if item_id is None:
             return self._send_json({"error": "not found"}, 404)
         if item_id not in self.state.item_by_id:
@@ -270,9 +283,8 @@ class AnnotationHandler(BaseHTTPRequestHandler):
         return self._send_json({"id": item_id, "bbox": None, "annotated": False})
 
     @staticmethod
-    def _match_bbox_route(path: str, method: str) -> str | None:
+    def _match_item_route(path: str, suffix: str) -> str | None:
         prefix = "/api/item/"
-        suffix = "/bbox"
         if not path.startswith(prefix) or not path.endswith(suffix):
             return None
         middle = path[len(prefix):-len(suffix)]
@@ -306,7 +318,6 @@ def create_server(
     data_dir: str | Path,
     host: str = "127.0.0.1",
     port: int = 0,
-    token: str = "",
     translations_path: str | Path | None = None,
 ) -> tuple[ThreadingHTTPServer, AnnotatorState]:
     manifest_path = Path(manifest_path).expanduser().resolve()
@@ -323,7 +334,6 @@ def create_server(
         items=items,
         translations=translations,
         store=store,
-        token=token,
     )
     server = ThreadingHTTPServer((host, port), AnnotationHandler)
     server.daemon_threads = True
@@ -337,7 +347,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data-dir", default="data", help="annotation output directory")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--token", default="", help="require X-Auth-Token header when set")
     parser.add_argument("--translations", default=None, help="translations sidecar override")
     args = parser.parse_args(argv)
 
@@ -347,7 +356,6 @@ def main(argv: list[str] | None = None) -> int:
             data_dir=args.data_dir,
             host=args.host,
             port=args.port,
-            token=args.token,
             translations_path=args.translations,
         )
     except (ValueError, FileNotFoundError, json.JSONDecodeError) as exc:
@@ -366,7 +374,6 @@ def main(argv: list[str] | None = None) -> int:
     if empty_queries:
         print(f"WARNING: {len(empty_queries)} items have empty queries", file=sys.stderr)
     print(f"serving: http://{display_host}:{port}/")
-    print(f"auth: {'token required (X-Auth-Token)' if state.token else 'disabled'}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
