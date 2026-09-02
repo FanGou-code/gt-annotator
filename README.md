@@ -9,9 +9,13 @@ HTML/JS/CSS 单页，完全离线可用。
 
 - canvas 画框 → 拖拽移动 → 8 控制点缩放；滚轮缩放、拖拽平移，适配小目标
 - 双语 query 并列展示（可选，自带批量翻译或自带译文均可）
-- 图号跳转、逐题快捷键流（`Enter` 提交并跳下一条未标注、`Esc` 清除、`←`/`→` 切题）
-- 崩溃安全：追加日志 + 原子快照，重启自动恢复；多人各标一份可合并
-- token 鉴权（可选），支持局域网/远程访问
+- 图号跳转、逐题快捷键流（`Enter` 提交并智能跳转、`H/L` 前后、`J/K` AI 待审、
+  `N` 未标、`X` 判空、`Esc` 清除；60% 键盘友好，方向键保留为别名）
+- AI 预标审核流：`J`/`K` 在 AI 待审条目（预标框 + AI 判空）间跳转，
+  `Enter` 一键核验/确认判空，人工与机器署名全程可追溯
+- 崩溃安全：追加日志 + 原子快照，重启自动恢复；服务端热加载日志，AI 批量预标
+  产物无需重启即可在网页出现；多人各标一份可合并
+- 局域网/远程直接访问，无登录鉴权
 
 ## 30 秒体验（自带样例数据）
 
@@ -69,7 +73,7 @@ python3 translate.py --manifest data/manifest.json \
 ```bash
 export API_KEY=sk-你的密钥
 python3 auto_annotate.py --manifest data/manifest.json --data-dir data \
-    --model glm-4.6v --concurrency 4 -v
+    --model glm-4.6v --concurrency 8 -v
 # 支持 --limit N 先测几条；自动识别无目标 Query 并置空；打标记录标记为 annotator: "glm-4.6v"
 ```
 
@@ -81,16 +85,19 @@ python3 server.py --manifest data/manifest.json --data-dir data \
 ```
 
 浏览器打开 `http://<主机IP>:8765/`（本地直接打开 `http://localhost:8765`）。
-- 网页会自动用紫色高亮区分 `🤖 待审AI预标`，绿色区分 `已核验 (人工)`；
-- 快捷键 `Alt + ←` / `Alt + →` 或顶部按钮可快速在 AI 预标条目之间跳转审核；
-- 审查无误直接敲 `Enter` 确认，自动转为人工核验并跳转下一条。
+- 网页自动区分四种状态：紫色 `🤖 待审AI预标`、灰色 `⚠️ AI判空待审`、
+  绿色 `已核验` / `✓ 已确认判空`、橙色 `未标注`；
+- 快捷键 `J` / `K` 快速在 AI 待审条目之间跳转审核（vim 键位，方向键为别名）；
+- 审查无误直接敲 `Enter` 确认（AI 判空条目上 `Enter` = 确认判空），漏检误判时
+  画框覆盖或按 `X` 判空，保存后自动跳转下一条待办。
 
 ## 输出说明
 
 | 文件 | 内容 |
 | --- | --- |
 | `data/annotations.predictions.json` | **最终产物**：`{条目id: [x1,y1,x2,y2]}` 归一化 0-1 XYXY，每次保存原子重写，可直接被评测/融合脚本消费 |
-| `data/annotations.jsonl` | 追加日志：每行含 `id / bbox / annotator / ts`，崩溃恢复依据；多人各标一份后可按 id 合并 |
+| `data/annotations.absent.json` | 判空清单：`{条目id: annotator}`（如 `fang0:absent`），与 predictions 快照同模式维护 |
+| `data/annotations.jsonl` | 追加日志：每行含 `id / bbox / annotator / ts`，崩溃恢复依据；判空以 `bbox: null` + `annotator` 以 `:absent` 结尾表达；多人各标一份后可按 id 合并 |
 | `data/manifest.json` | 输入清单（由 make_manifest.py 生成） |
 | `data/translations.json(l)` | 翻译快照与追加日志 |
 

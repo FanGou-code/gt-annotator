@@ -7,7 +7,7 @@
 
 - 同源部署：前端由后端同一端口伺服，无 CORS、无 cookie。
 - 所有 API 收发 JSON（UTF-8）；错误响应统一为 `{"error": "<message>"}`。
-- 鉴权：启动参数 `--token SECRET` 时，`/api/*` 与 `/image` 必须带请求头 `X-Auth-Token: SECRET`，否则 `401`；静态前端资源（`web/` 下文件）**不需要** token（浏览器首次加载时还没有 token，由前端弹窗录入后访问 API）。未设 token 则无鉴权。
+- 无鉴权：所有路由开放直连（token 机制已移除）。
 - 会话数据一次性下发：`/api/session` 包含全部条目（9555 条约 2-3MB），前端加载一次后自行在内存中维护游标与状态。
 
 ## 坐标系统（核心约定）
@@ -64,7 +64,21 @@
 ### DELETE /api/item/{id}/bbox
 
 - 成功 `200`：`{"id": "...", "bbox": null, "annotated": false}`。
-- 幂等；未标注条目也返回 200。`404` 同上。
+- 幂等；未标注条目也返回 200。同时撤销判空状态（回到未标注）。`404` 同上。
+
+### PUT /api/item/{id}/absent
+
+人工判空（确认该条目目标不存在）。请求体：
+
+```json
+{"annotator": "fang0"}
+```
+
+- `annotator` 必填，非空字符串、最长 64 字符；落库为 `"<annotator>:absent"`。
+- 成功 `200`：`{"id": "...", "bbox": null, "annotator": "fang0:absent", "annotated": false}`。
+- `400`：annotator 缺失/为空/超长；body 非法。`404`：item id 不在 manifest 中。
+- 覆盖语义：对已有框的条目判空会清除该框；`DELETE /api/item/{id}/bbox` 可撤销判空回到未标注。
+- 判空条目不出现在 `annotations.predictions.json`（该快照只含框），统一进 `annotations.absent.json`（`{条目id: annotator}` 快照，与 predictions 同模式原子重写）。
 
 ### GET /api/progress
 
@@ -73,6 +87,7 @@
   "manifest": "rgbdt-test",
   "total_items": 9555,
   "annotated": 1234,
+  "absent": 56,
   "total_images": 2000,
   "annotated_images": 980
 }
@@ -86,7 +101,7 @@
 ## curl 冒烟示例
 
 ```bash
-curl -H "X-Auth-Token: s3cret" http://127.0.0.1:8765/api/progress
-curl -H "X-Auth-Token: s3cret" -X PUT http://127.0.0.1:8765/api/item/000002_001/bbox \
+curl http://127.0.0.1:8765/api/progress
+curl -X PUT http://127.0.0.1:8765/api/item/000002_001/bbox \
   -H "Content-Type: application/json" -d '{"bbox":[0.1,0.2,0.3,0.4],"annotator":"alice"}'
 ```
