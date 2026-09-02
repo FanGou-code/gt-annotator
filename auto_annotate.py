@@ -225,11 +225,16 @@ class Progress:
 
 
 def run(args: argparse.Namespace) -> int:
-    api_key = os.environ.get("API_KEY", "").strip()
+    api_key = (
+        args.api_key
+        or os.environ.get("API_KEY")
+        or os.environ.get("ZHIPU_API_KEY")
+        or ""
+    ).strip()
     if not api_key:
         print(
-            "API_KEY is not set. Set it in the current environment; "
-            "never store it in the repository.",
+            "API_KEY is not set. Set it via --api-key or in the environment "
+            "(export API_KEY=... or ZHIPU_API_KEY=...).",
             file=sys.stderr,
         )
         return 2
@@ -365,6 +370,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--manifest", required=True, help="manifest.json path")
     parser.add_argument("--data-dir", default="data", help="data directory (default data)")
+    parser.add_argument("--api-key", default=None, help="Zhipu API key (default: API_KEY or ZHIPU_API_KEY env)")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"model name (default {DEFAULT_MODEL})")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="OpenAI-compatible API base URL")
     parser.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY, help="concurrent worker threads")
