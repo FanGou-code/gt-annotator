@@ -9,6 +9,7 @@
 
   // --- Constants & Storage Keys ---
   const STORAGE_KEY_ANNOTATOR = 'gt_annotator_name';
+  const STORAGE_KEY_LAST_ITEM_ID = 'gt_last_item_id';
   const MIN_BOX_SIZE_PX = 4; // Minimum drag size in natural image pixels to avoid zero-area boxes
   const HANDLE_RADIUS_SCREEN = 7; // Radius of resize handles in canvas screen pixels
   const IMAGE_CACHE_CAPACITY = 50; // Maximum cached images in LRU cache to prevent memory explosion
@@ -167,6 +168,16 @@
     return !!item.bbox && isAiAnnotator(ann);
   }
 
+  // Todo item predicate:
+  // Only items with a human-verified bounding box are considered Done.
+  // Everything else (unannotated, AI pre-annotated box, AI absence, and human provisional absence)
+  // is treated as Todo requiring human review / final verdict.
+  function isTodoItem(item) {
+    if (!item) return false;
+    const isHumanVerifiedBox = !!item.bbox && !isAiAnnotator(item.annotator);
+    return !isHumanVerifiedBox;
+  }
+
   // --- API Client ---
   async function apiFetch(url, options = {}) {
     const headers = options.headers || {};
@@ -213,9 +224,26 @@
       
       dom.manifestBadge.textContent = state.manifest;
       
-      // Auto-position to first unprocessed item
-      const firstUnprocessedIdx = state.items.findIndex(it => !it.bbox && !it.annotator);
-      state.currentIndex = firstUnprocessedIdx >= 0 ? firstUnprocessedIdx : 0;
+      // Resolve initial item index with 3-tier precedence:
+      // 1. URL hash (#<id>) if matching an item
+      // 2. Last viewed item remembered in localStorage
+      // 3. First todo item (unannotated, AI pre-box, AI absent, or human provisional absent)
+      let initialIdx = -1;
+      const hashId = (window.location.hash || '').replace(/^#/, '').trim();
+      if (hashId) {
+        initialIdx = state.items.findIndex(it => it.id === hashId);
+      }
+      if (initialIdx === -1) {
+        const lastViewedId = localStorage.getItem(STORAGE_KEY_LAST_ITEM_ID);
+        if (lastViewedId) {
+          initialIdx = state.items.findIndex(it => it.id === lastViewedId);
+        }
+      }
+      if (initialIdx === -1) {
+        const firstTodoIdx = state.items.findIndex(isTodoItem);
+        initialIdx = firstTodoIdx >= 0 ? firstTodoIdx : 0;
+      }
+      state.currentIndex = initialIdx >= 0 ? initialIdx : 0;
       
       updateOverallProgress();
       renderCurrentItem();
@@ -261,6 +289,18 @@
     if (index < 0 || index >= state.items.length) return;
     if (state.currentIndex === index && state.currentImage) return;
     state.currentIndex = index;
+    const item = state.items[index];
+    if (item && item.id) {
+      try {
+        localStorage.setItem(STORAGE_KEY_LAST_ITEM_ID, item.id);
+        const targetHash = '#' + item.id;
+        if (window.location.hash !== targetHash) {
+          history.replaceState(null, '', targetHash);
+        }
+      } catch (err) {
+        // Ignore storage or history errors in restricted environments
+      }
+    }
     renderCurrentItem();
   }
 
@@ -990,11 +1030,14 @@
       return;
     }
 
-    const annotatorName = (dom.annotatorInput.value || '').trim();
-    if (annotatorName) {
-      state.annotator = annotatorName;
-      localStorage.setItem(STORAGE_KEY_ANNOTATOR, annotatorName);
+    const annotatorName = (dom.annotatorInput.value || state.annotator || '').trim();
+    if (!annotatorName) {
+      showToast('保存需署名：请先在右上角填写标注者', 'error');
+      dom.annotatorInput.focus();
+      return;
     }
+    state.annotator = annotatorName;
+    localStorage.setItem(STORAGE_KEY_ANNOTATOR, annotatorName);
 
     try {
       dom.saveBtn.disabled = true;
@@ -1002,7 +1045,7 @@
         method: 'PUT',
         body: JSON.stringify({
           bbox: state.activeBbox,
-          annotator: annotatorName || null
+          annotator: annotatorName
         })
       });
 
@@ -1146,29 +1189,26 @@
   }
 
   function goToNextTodo() {
-    // Prefer pending AI pre-annotations ahead, otherwise the next unprocessed item,
-    // wrapping to AI items before the cursor as a last resort.
+    // Search forward from current index for the next todo item:
+    // Any item without a human-verified bounding box is a todo
+    // (unannotated, AI-pending box, AI absence, or human provisional absence).
     for (let i = state.currentIndex + 1; i < state.items.length; i++) {
-      if (isAiPendingItem(state.items[i])) {
+      if (isTodoItem(state.items[i])) {
         goToIndex(i);
         return;
       }
     }
-    const nextIdx = findNextUnannotated();
-    if (nextIdx !== -1 && nextIdx !== state.currentIndex) {
-      goToIndex(nextIdx);
-      return;
-    }
-    for (let i = 0; i <= state.currentIndex; i++) {
-      if (isAiPendingItem(state.items[i])) {
+    // Wrap around to search from the beginning up to the current item
+    for (let i = 0; i < state.currentIndex; i++) {
+      if (isTodoItem(state.items[i])) {
         goToIndex(i);
         return;
       }
     }
-    if (state.items.every(it => it.bbox || it.annotator)) {
-      showToast('🎉 所有条目已处理完毕！', 'success');
+    if (state.items.length > 0 && !isTodoItem(state.items[state.currentIndex])) {
+      showToast('🎉 所有待办条目已全部核验完成！', 'success');
     } else {
-      showToast('已是最后一条待处理', 'info');
+      showToast('当前已是唯一一条待处理项', 'info');
     }
   }
 
